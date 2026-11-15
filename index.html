@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Find and characterize Earth sites that behave like Mars or the Moon, scored from live climate, terrain and geology data.">
+<title>ANALOG//ATLAS: Terrestrial Analog Site Finder</title>
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://services.arcgisonline.com" crossorigin>
+<link rel="preconnect" href="https://trek.nasa.gov" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="mode-mars">
+<header id="home" class="home" role="dialog" aria-label="Welcome">
+  <div class="hp-nav">
+    <div class="hp-wrap hp-nav-in">
+      <a class="hp-brand" href="#top"><img src="logo.png" alt="" width="30" height="30" onerror="this.style.display='none'"><span>ANALOG//ATLAS</span></a>
+      <nav class="hp-links" aria-label="Home sections"><a href="#how" data-panel="how">How it works</a><a href="#features" data-panel="features">Features</a><a href="#data" data-panel="data">Data</a><a href="#faq" data-panel="faq">FAQ</a></nav>
+      <button type="button" class="hp-mini js-start">Start exploring</button>
+    </div>
+  </div>
+
+  <div class="hp-earth-wrap" aria-hidden="true"><div id="heroEarth" class="hp-earth"></div><div class="hp-moon-wrap"><div id="heroMoon" class="hp-moon"></div></div></div>
+
+  <div class="hp-wrap" id="top">
+    <section class="hp-hero">
+      <p class="hp-badge"><span class="dot" aria-hidden="true"></span>Team Cyber Mindset &middot; NASA Space Apps Hackathon</p>
+      <h1 class="hp-title">ANALOG//ATLAS:<br><em>Earth sites that behave like other worlds.</em></h1>
+      <p class="hp-lead">Find the places on Earth that most resemble <b>Mars</b> or the <b>Moon</b>, scored from live climate, terrain and geology data. Click anywhere on the globe to characterize a new site.</p>
+      <figure class="quote-box" id="quoteBox" aria-live="off">
+        <blockquote id="quoteText"></blockquote>
+        <figcaption id="quoteBy"></figcaption>
+      </figure>
+      <ul class="hp-stats" aria-label="Project at a glance">
+        <li><b id="statSites">14</b><span>Earth analog sites</span></li>
+        <li><b id="statRefs">50</b><span>Mars and Moon features</span></li>
+        <li><b>3</b><span>Modes</span></li>
+        <li><b>6</b><span>Live data sources</span></li>
+      </ul>
+      <ul class="hp-strip" aria-label="Highlights">
+        <li>Measured vs estimated, labelled</li><li>Live climate and terrain</li><li>Real NASA Trek imagery</li><li>No sign-up needed</li>
+      </ul>
+      <div class="hp-actions hp-actions-bottom">
+        <button id="startBtn" class="cta js-start" type="button">Start exploring <span aria-hidden="true">&rarr;</span></button>
+        <a class="hp-ghost" href="#how" data-panel="how">See how it works</a>
+      </div>
+    </section>
+  </div>
+
+  <div class="hp-modal" id="hpModal" hidden>
+    <div class="hp-modal-bg" data-close></div>
+    <div class="hp-sheet" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">
+      <button type="button" class="hp-x" data-close aria-label="Close">&times;</button>
+      <section class="hp-pane" id="pane-how" data-title="How it works" hidden>
+      <p class="eyebrow">How it works</p>
+      <h2 class="hp-h2">Explore a site in three steps</h2>
+      <div class="hp-grid g3">
+        <article class="hp-card"><span class="hp-num">1</span><h3>Pick a world</h3><p>Switch between Earth, Mars and Moon. Each mode ranks Earth sites by how closely they match the target world.</p></article>
+        <article class="hp-card"><span class="hp-num">2</span><h3>Choose a place</h3><p>Select one of the analog sites, search a name or coordinates, or click anywhere on the 3D globe.</p></article>
+        <article class="hp-card"><span class="hp-num">3</span><h3>Read the evidence</h3><p>See the similarity score, the data behind it, and side-by-side imagery of the Earth site and its planetary match.</p></article>
+      </div>
+        <div class="hp-sheet-foot"><button type="button" class="cta js-start">Start exploring <span aria-hidden="true">&rarr;</span></button></div>
+      </section>
+      <section class="hp-pane" id="pane-features" data-title="Features" hidden>
+      <p class="eyebrow">Why Analog Atlas</p>
+      <h2 class="hp-h2">Everything you need, nothing you don&rsquo;t</h2>
+      <div class="hp-grid g3">
+        <article class="hp-card"><h3>Live-data scoring</h3><p>Current conditions, annual climate, terrain and mapped bedrock feed each similarity score.</p></article>
+        <article class="hp-card"><h3>3D globe</h3><p>Drag, zoom and click. Switch imagery, or load your own world map.</p></article>
+        <article class="hp-card"><h3>Mars and Moon modes</h3><p>Click any point on another world and find its closest Earth look-alikes.</p></article>
+        <article class="hp-card"><h3>Search anywhere</h3><p>Type a place or coordinates, for example <i>Atacama</i> or <i>28.61, 77.20</i>.</p></article>
+        <article class="hp-card"><h3>Side-by-side imagery</h3><p>Compare Earth tiles with NASA Trek mosaics and shaded relief of the matching feature.</p></article>
+        <article class="hp-card"><h3>Honest labels</h3><p>Every panel marks data as measured or estimated. Scores are ranking indices, not validated accuracy.</p></article>
+      </div>
+      <ul class="hp-chips" aria-label="Example analog sites">
+        <li>Atacama Desert</li><li>McMurdo Dry Valleys</li><li>Rio Tinto</li><li>Danakil Depression</li><li>Haughton Crater</li><li>Mauna Kea</li><li>Askja Caldera</li><li>Barringer Crater</li><li>Lanzarote Lava Tubes</li><li>Craters of the Moon</li><li>Death Valley</li><li>Salar de Uyuni</li><li>Kilauea Caldera</li><li>Svalbard</li>
+      </ul>
+        <div class="hp-sheet-foot"><button type="button" class="cta js-start">Start exploring <span aria-hidden="true">&rarr;</span></button></div>
+      </section>
+      <section class="hp-pane" id="pane-data" data-title="Data" hidden>
+      <p class="eyebrow">The data</p>
+      <h2 class="hp-h2">Where the numbers come from</h2>
+      <div class="hp-table" role="region" aria-label="Data sources" tabindex="0">
+        <table>
+          <thead><tr><th>Source</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td>OpenWeather</td><td>Current conditions</td></tr>
+            <tr><td>ERA5 via Open-Meteo</td><td>Annual climate</td></tr>
+            <tr><td>SRTM15+ via OpenTopography</td><td>Terrain and elevation</td></tr>
+            <tr><td>Macrostrat</td><td>Mapped bedrock</td></tr>
+            <tr><td>NASA Trek</td><td>Mars and Moon mosaics, shaded relief</td></tr>
+            <tr><td>Esri World Imagery</td><td>Earth tiles</td></tr>
+          </tbody>
+        </table>
+      </div>
+        <div class="hp-sheet-foot"><button type="button" class="cta js-start">Start exploring <span aria-hidden="true">&rarr;</span></button></div>
+      </section>
+      <section class="hp-pane" id="pane-faq" data-title="FAQ" hidden>
+      <p class="eyebrow">FAQ</p>
+      <h2 class="hp-h2">Questions, answered</h2>
+      <div class="hp-faq">
+        <details><summary>What is an analog site?</summary><p>A place on Earth whose conditions resemble another world, used to test equipment and train crews before real missions.</p></details>
+        <details><summary>How is the similarity score calculated?</summary><p>It combines climate, terrain and geology measures against the target world. It is a ranking index for comparing sites, not a validated accuracy figure.</p></details>
+        <details><summary>Can I check a place that isn&rsquo;t on the list?</summary><p>Yes. Click anywhere on the globe or search a name or coordinates and the app characterizes it on the spot.</p></details>
+        <details><summary>What do the Mars and Moon modes do?</summary><p>You click a point on the planetary globe and the app lists the nearest catalogued features and their closest Earth look-alikes.</p></details>
+        <details><summary>Do I need an account?</summary><p>No. Press Start exploring and the dashboard opens.</p></details>
+        <details><summary>What does &ldquo;measured vs estimated&rdquo; mean?</summary><p>Measured values come straight from a data source. Estimated values are modelled or inferred, and are flagged so you can weigh them accordingly.</p></details>
+      </div>
+        <div class="hp-sheet-foot"><button type="button" class="cta js-start">Start exploring <span aria-hidden="true">&rarr;</span></button></div>
+      </section>
+    </div>
+  </div>
+</header>
+
+<div id="app">
+  <main id="mapWrap">
+    <div id="map" aria-label="3D globe of analog sites"></div>
+    <div id="pmap" hidden aria-label="3D planetary globe: click any point"></div>
+    <div class="tex glass"><label for="texSel">Imagery</label><select id="texSel"></select><button id="texFile" type="button" title="Use a downloaded world map (JPG/PNG/WebP, 2:1 equirectangular)">Load my map</button><input id="texInput" type="file" accept="image/jpeg,image/png,image/webp" hidden></div>
+    <div id="gload" class="gload glass" hidden role="status" aria-live="polite">Loading imagery...</div>
+    <div class="gnote">Drag to rotate &middot; scroll to zoom &middot; click to select</div>
+    <div class="map-hud glass">
+      <span class="dot"></span><a class="hud-home" href="#home" title="Back to home page">&uarr; Home</a><span id="hudText">Select a site, or click anywhere on the map to characterize a new one.</span>
+    </div>
+  </main>
+
+  <aside id="panel">
+    <header class="panel-head">
+      <div>
+        <h1>ANALOG//ATLAS</h1>
+        <p>Earth sites that behave like other worlds</p>
+      </div>
+      <div class="mode-switch" role="tablist" aria-label="Exploration mode">
+        <button id="btnEarth" role="tab" aria-selected="false">Earth</button>
+        <button id="btnMars" role="tab" class="active" aria-selected="true">Mars</button>
+        <button id="btnMoon" role="tab" aria-selected="false">Moon</button>
+      </div>
+    </header>
+
+    <form id="searchForm" class="search glass" role="search" autocomplete="off">
+      <label for="searchInput" class="sr-only">Search a place or coordinates</label>
+      <div class="search-row">
+        <input id="searchInput" type="search" placeholder="Search a place or coordinates (e.g. Atacama, or 28.61, 77.20)" spellcheck="false" enterkeyhint="search">
+        <button id="searchBtn" type="submit">Go</button>
+      </div>
+      <p id="searchMsg" class="search-msg" role="status" aria-live="polite" hidden></p>
+      <ul id="searchList" class="search-list" hidden></ul>
+    </form>
+
+    <div id="alerts" aria-live="polite"></div>
+
+    <section id="earthCard" class="glass card">
+      <div class="cmp-head"><h2>Best Earth sites for <span id="modeName">Mars</span></h2>
+        <div id="cmpRow" class="cmp" role="group" aria-label="Compare Earth sites with"><span>Compare with</span><button id="cmpMars" type="button">Mars</button><button id="cmpMoon" type="button">Moon</button></div></div>
+      <ol id="siteList"></ol>
+      <div class="live-row"><button id="refreshLive" type="button" title="Re-score all 14 sites from live APIs, one at a time">Refresh live data</button><button id="saveSnap" type="button" title="Download sites_baseline.json to bundle with the app">Save snapshot</button><span id="liveMsg" role="status" aria-live="polite"></span></div>
+    </section>
+
+    <section id="planetCard" class="glass card" hidden aria-live="polite"></section>
+
+    <section id="detail" class="glass card" aria-live="polite"></section>
+
+    <footer class="sources">
+      Measured vs estimated data is labelled in every panel. Similarity scores are ranking indices, not validated accuracy. Data: OpenWeather (current conditions), ERA5 via Open-Meteo (annual climate), SRTM15+ via OpenTopography (terrain), Macrostrat (mapped bedrock), NASA Trek (Mars/Moon mosaics and shaded relief), Esri World Imagery and World Topographic Map (Earth tiles; credit: Esri, Maxar, Earthstar Geographics and the GIS user community), NASA Blue Marble and three-globe (base textures).
+    </footer>
+  </aside>
+</div>
+<div class="info-pop" id="infoPop" hidden>
+  <div class="info-bg" data-close></div>
+  <div class="info-sheet" role="dialog" aria-modal="true" aria-labelledby="infoTitle" tabindex="-1">
+    <button type="button" class="info-x" data-close aria-label="Close">&times;</button>
+    <p class="info-eyebrow" id="infoEyebrow"></p>
+    <h3 id="infoTitle"></h3>
+    <div class="info-body" id="infoBody"></div>
+  </div>
+</div>
+<noscript><p style="padding:20px;color:#E6E9F5">This dashboard needs JavaScript.</p></noscript>
+
+<script src="https://unpkg.com/globe.gl@2.46.2/dist/globe.gl.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
