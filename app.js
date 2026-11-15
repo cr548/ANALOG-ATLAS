@@ -205,7 +205,23 @@ async function getTerrain(site, quiet) {
         sum += Math.atan(Math.hypot(dx / cellX, dy / cell)) * 180 / Math.PI; n++;
       }
     }
-    return { elev: tot / vals.length, min: mn, max: mx, slope: n ? sum / n : 0, live: true };
+    /* Elevation AT the clicked point (nearest DEM cell), kept apart from the area mean above: the point tells sea from land, the mean cannot. */
+    let elevPt = NaN;
+    {
+      const cs = hdr.cellsize, nr = grid.length;
+      const xll = Number.isFinite(hdr.xllcorner) ? hdr.xllcorner : Number.isFinite(hdr.xllcenter) ? hdr.xllcenter - cs / 2 : NaN;
+      const yll = Number.isFinite(hdr.yllcorner) ? hdr.yllcorner : Number.isFinite(hdr.yllcenter) ? hdr.yllcenter - cs / 2 : NaN;
+      if (Number.isFinite(xll) && Number.isFinite(yll)) {
+        const r0 = Math.floor((yll + nr * cs - site.lat) / cs), c0 = Math.floor((site.lon - xll) / cs);
+        let best = Infinity;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const r = clamp(r0 + dr, 0, nr - 1), row = grid[r], c = clamp(c0 + dc, 0, row.length - 1), v = row[c];
+          if (Number.isFinite(v) && v !== nd) { const dist = Math.hypot(r - r0, c - c0); if (dist < best) { best = dist; elevPt = v; } }
+        }
+      }
+    }
+    const wetFrac = vals.filter((v) => v <= 0).length / vals.length;
+    return { elev: tot / vals.length, elevPt, wetFrac, min: mn, max: mx, slope: n ? sum / n : 0, live: true };
   } catch (e) {
     console.warn("Terrain fallback:", e);
     try {
@@ -223,7 +239,7 @@ async function getTerrain(site, quiet) {
       }
       if (!quiet) notify("OpenTopography unavailable. Elevation and slope measured with the Open-Meteo DEM instead (about 2 km spacing).");
       /* measured but coarser: flagged partial so the UI never claims a full DEM measurement */
-      return { elev: z[0], min: Math.min(...z), max: Math.max(...z), slope: sum / 8, live: false, partial: true };
+      return { elev: z[0], elevPt: z[0], wetFrac: z.filter((v) => v <= 0).length / z.length, min: Math.min(...z), max: Math.max(...z), slope: sum / 8, live: false, partial: true };
     } catch (e2) { console.warn("Open-Meteo fallback failed:", e2); }
     if (!quiet) notify("Elevation services failed. Using reference elevation and slope from the matrix, so the ocean check could not run.");
     return { elev: Number.isFinite(site.elev) ? site.elev : 500, min: NaN, max: NaN, slope: Number.isFinite(site.slope) ? site.slope : 5, live: false, offline: true };
@@ -250,13 +266,17 @@ async function getGeology(site, quiet) {
     const data = d && d.success && d.success.data;
     const units = Array.isArray(data) ? data : (data && (data.mapData || data.map_data)) || [];
     if (!Array.isArray(units) || !units.length) throw new Error("No mapped geology here");
+    /* Some maps outline lakes and bays as units named "Water". That is not bedrock and must never count as land. */
+    const waterish = (u) => /^(water|lake|lakes|ocean|sea|reservoir|lagoon|bay)\b/i.test(String(u.name || u.strat_name || "").trim()) || /^(water|ocean|lake)\b/i.test(String(u.lith || "").trim());
+    const rock = units.filter((u) => !waterish(u));
+    if (!rock.length) throw new Error("No mapped geology here: only water polygons");
     const counts = {}, names = [];
     const PRIORITY = ["ice", "evaporite", "ultramafic", "felsic", "granitic", "basalt", "carbonate", "mudstone", "sandstone", "sediment"];
     /* Large-scale (detailed) map units count most; coarse "tiny" continental units count least. */
     const SW = { large: 1, medium: 0.6, small: 0.3, tiny: 0.15 };
     const classOf = (text) => PRIORITY.find((id) => ROCK_CLASSES.find((rc) => rc.id === id).re.test(text));
     const volAges = [];
-    units.slice(0, 12).forEach((u) => {
+    rock.slice(0, 12).forEach((u) => {
       if (u.name && names.length < 2) names.push(String(u.name));
       const w = SW[u.scale] || 0.3;
       /* lithology list first: "Major:{sandstone}, Minor:{dolostone}" uses the major part; the first-listed rock counts fully, the rest 40% */
@@ -281,6 +301,7 @@ async function getGeology(site, quiet) {
     return { vec, counts, labels, names, live: true, mapped: true, src: "Macrostrat map", youngVolcMa: volAges.length ? Math.min(...volAges) : null, glim: gl ? { label: GLIM_CLASS[gl].label } : null, agree };
   } catch (e) {
     console.warn("Geology fallback:", e);
+    if (/only water polygons/.test(String((e && e.message) || e))) return { empty: true, water: true, reason: "only water polygons mapped" };
     const glg = glimGeology(site); if (glg) return glg; /* independent global lithology map (GLiM) when Macrostrat has nothing or is unreachable */
     /* three different outcomes: nothing mapped here (open water or no coverage), land with unreadable rock names, or a failed request */
     const msg = String((e && e.message) || e);
@@ -334,27 +355,84 @@ function geocode(s) {
   return p;
 }
 
-/* WATER OR LAND? Several independent signals vote, so one failing service cannot break the check.
-   Water evidence (1 point each): elevation at or below sea level (SRTM15+ includes sea floor), OpenWeather returns no country code,
-   no mapped bedrock anywhere (Macrostrat and GLiM both empty), the geocoder finds no land address.
-   Land evidence (vetoes water): Macrostrat maps bedrock here, OpenWeather names a country, elevation clearly above sea level (over 20 m),
-   or the geocoder names a place. Land below sea level (Danakil, Death Valley) always has land evidence, so it is never flagged.
-   A spot counts as water only with at least 2 water points and no land evidence. */
+/* POINT-EXACT WATER PROBES (custom sites only, run alongside the other requests; null = the service did not answer, so nothing is assumed).
+   marine: Open-Meteo's ocean wave model has values only over sea cells. It snaps to the nearest cell, so on its own it is supporting evidence.
+   lake:   OpenStreetMap water polygons that CONTAIN the clicked point (lakes, reservoirs, wide rivers, bays), through Overpass is_in.
+           Ponds, canals, ditches and seasonal (intermittent) water are ignored. This is the only signal that can see a lake high above sea level. */
+const probeMemo = new Map();
+function waterProbe(s) {
+  const lat = clamp(s.lat, -89.9, 89.9), lon = wrapLon(s.lon), key = lat.toFixed(3) + "," + lon.toFixed(3);
+  if (probeMemo.has(key)) return probeMemo.get(key);
+  const marine = (async () => {
+    try {
+      const d = await request(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height&forecast_days=1&cell_selection=nearest`, "json", 6000);
+      const a = d && d.hourly && d.hourly.wave_height;
+      return Array.isArray(a) && a.some((v) => Number.isFinite(v));
+    } catch (e) { return /HTTP 400/.test(String((e && e.message) || e)) ? false : null; }   /* 400 = no marine data here (land); anything else = unknown */
+  })();
+  const lake = (async () => {
+    try {
+      const q = `[out:json][timeout:6];is_in(${lat},${lon})->.a;(` +
+        `area.a["natural"="water"]["water"!~"^(pond|basin|wastewater|reflecting_pool|moat|ditch|lock|fish_pass|stream_pool|pool|canal|salt_pan)$"]["intermittent"!="yes"];` +
+        `area.a["natural"="bay"];area.a["place"~"^(sea|ocean)$"];);out tags 3;`;
+      const d = await request("https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q), "json", 6500);
+      if (!d || !Array.isArray(d.elements) || (d.remark && /error|timed out|out of memory/i.test(String(d.remark)))) return null;
+      if (!d.elements.length) return false;
+      const tg = d.elements[0].tags || {};
+      const kind = tg.natural === "bay" ? "bay" : tg.place ? tg.place : tg.water ? String(tg.water) : "water body";
+      return { name: tg["name:en"] || tg.name || "", kind };
+    } catch (e) { return null; }
+  })();
+  const p = Promise.all([marine, lake]).then(([m, l]) => ({ marine: m, lake: l }));
+  probeMemo.set(key, p);
+  return p;
+}
+
+/* WATER OR LAND? Decided at the CLICKED POINT, not on an area average. Several independent signals, so one failing service cannot break it.
+   Decisive water:   OpenStreetMap maps the point inside a lake, reservoir, river or bay polygon;
+                     or the point is 10 m or more below sea level and the ocean wave model has data;
+                     or the point is more than 500 m below sea level (no dry land on Earth is that low).
+   Sea level or below (elevation of the nearest SRTM15+ cell, which includes the sea floor): water if at least one more signal agrees
+                     (most of the surrounding terrain is also below sea level, wave model data, OpenWeather gives no country,
+                     no mapped bedrock, geocoder finds no land address) AND Macrostrat does not map real bedrock here.
+                     Land below sea level (Danakil, Death Valley, Qattara) has mapped bedrock, so it is never flagged.
+   Above sea level:  never ocean; only a mapped lake polygon can make it water.
+   OpenWeather naming a country and the geocoder naming a place are NOT used as vetoes: both also answer for coastal waters.
+   Without any elevation (DEM services down) it falls back to a vote of the other signals. */
 function detectWater(d) {
-  const why = [], land = [];
-  const elev = d.t.elev, elevOk = Number.isFinite(elev) && !d.t.offline;
+  const t = d.t, wp = d.wp || {}, why = [], land = [];
+  const pt = Number.isFinite(t.elevPt) ? t.elevPt : t.elev;     /* results cached by an older version only have the area average */
+  const elevOk = Number.isFinite(pt) && !t.offline;
   const macro = Boolean(d.g && !/^GLiM/i.test(String(d.g.src || "")));
+  const strongLand = macro || Boolean(d.geoLand);
+  const noCountry = Boolean(d.w.live && !d.w.country), geoNone = Boolean(d.geoEmpty || d.geoWater), gcWater = Boolean(d.gc && d.gc.water);
+  const marine = wp.marine === true, lake = wp.lake && typeof wp.lake === "object" ? wp.lake : null;
+  const wet = Boolean(elevOk && pt <= 0 && Number.isFinite(t.wetFrac) && t.wetFrac >= 0.6);
   if (macro) land.push("Macrostrat maps bedrock here");
   if (d.geoLand) land.push("land with mapped rock units");
-  if (d.w.live && d.w.country) land.push("OpenWeather reports a country (" + d.w.country + ")");
-  if (elevOk && elev > 20) land.push("elevation is above sea level (" + fmt(elev) + " m)");
-  if (d.gc && !d.gc.water && (d.gc.place || d.gc.country)) land.push("geocoder names " + (d.gc.place || d.gc.country));
-  if (elevOk && elev <= 0) why.push("elevation " + fmt(elev) + " m (at or below sea level)");
-  if (d.w.live && !d.w.country) why.push("OpenWeather gives no country, as over open water");
-  if (d.geoEmpty) why.push("no mapped bedrock in Macrostrat or GLiM");
-  if (d.gc && d.gc.water) why.push("the geocoder finds no land address");
-  const checks = (elevOk ? 1 : 0) + (d.w.live ? 1 : 0) + (d.geoEmpty || d.g || d.geoLand ? 1 : 0) + (d.gc ? 1 : 0);
-  return { ocean: land.length === 0 && why.length >= 2, why, land, unverified: checks < 2 };
+  if (elevOk && pt > 0) land.push("elevation at the point is above sea level (" + fmt(pt) + " m)");
+  if (lake) why.push("OpenStreetMap maps this exact point inside " + (lake.name ? "\"" + lake.name + "\"" : "a " + lake.kind));
+  if (elevOk && pt <= 0) why.push("elevation at the clicked point is " + fmt(pt) + " m (sea level or below)");
+  if (wet) why.push(Math.round(t.wetFrac * 100) + "% of the surrounding 10 km is also below sea level");
+  if (marine) why.push("the ocean wave model has data here");
+  if (noCountry) why.push("OpenWeather gives no country, as over open water");
+  if (d.geoWater) why.push("the only mapped geology here is water");
+  else if (d.geoEmpty) why.push("no mapped bedrock in Macrostrat or GLiM");
+  if (gcWater) why.push("the geocoder finds no land address");
+  const extra = [wet, marine, noCountry, geoNone, gcWater].filter(Boolean).length;
+  let ocean;
+  if (lake) ocean = true;
+  else if (elevOk) {
+    if (pt > 0) ocean = false;
+    else if (pt <= -500) ocean = true;
+    else if (marine && pt <= -10) ocean = true;
+    else ocean = extra >= 1 && !strongLand;
+  } else {
+    const landSig = strongLand || Boolean(d.w.live && d.w.country) || Boolean(d.gc && !d.gc.water && (d.gc.place || d.gc.country));
+    ocean = !landSig && extra >= 2;
+  }
+  const checks = (elevOk ? 1 : 0) + (d.w.live ? 1 : 0) + (d.geoEmpty || d.geoWater || d.g || d.geoLand ? 1 : 0) + (d.gc ? 1 : 0) + (wp.marine != null ? 1 : 0) + (wp.lake != null ? 1 : 0);
+  return { ocean, why, land, unverified: !elevOk || checks < 3 };
 }
 
 /* OpenWeather reports pressure at sea level; Mars/Moon comparisons need pressure at the surface where the site sits.
@@ -396,8 +474,9 @@ async function loadBaseline() {
 function analyze(s, quiet, force) {
   if (force) s._p = null;
   if (!s._p) s._p = (async () => {
-    const ck = "analog:v3:" + s.lat.toFixed(2) + "," + s.lon.toFixed(2);
+    const ck = "analog:v4:" + s.lat.toFixed(2) + "," + s.lon.toFixed(2);
     const gcP = s.id === "custom" ? geocode(s) : null;           /* water/land probe + place name, runs alongside the other requests */
+    const wpP = s.id === "custom" ? waterProbe(s) : null;          /* point-exact water probes, also in parallel */
     let raw = force ? null : cacheGet(ck), fromSnap = false;
     if (!raw && !force && s.id !== "custom" && BASELINE.sites[s.id]) { raw = cloneJSON(BASELINE.sites[s.id]); fromSnap = true; }
     if (!raw) {
@@ -411,7 +490,8 @@ function analyze(s, quiet, force) {
     w.seaPress = w.press;
     w.press = surfacePressure(w, t.elev);
     const gc = gcP ? await gcP : null;
-    const data = { snapshot: fromSnap, gc, w, c, t, g, geoEmpty: Boolean(g0 && g0.empty), geoLand: Boolean(g0 && g0.land), geoFailed: Boolean(g0 && g0.failed) };
+    const wp = wpP ? await wpP : null;
+    const data = { snapshot: fromSnap, gc, w, c, t, g, geoEmpty: Boolean(g0 && g0.empty), geoLand: Boolean(g0 && g0.land), geoFailed: Boolean(g0 && g0.failed), geoWater: Boolean(g0 && g0.water), wp };
     s.data = data;
     if (s.id !== "custom") { s.scores = scoreCustom(s.type, c, w, t, g); s.scored = true; }
     return data;
@@ -829,7 +909,7 @@ function renderDetail() {
         <span class="tag" id="siteCountry">${esc(s.country)}</span><span class="tag">${esc(tag)}</span><span class="tag verdict ${vd.id}">${vd.label}</span>
         ${blocked
           ? `<p class="warn-box">Invalid Target: water body detected. Open liquid water cannot serve as an analog for hyper-arid Martian or Lunar surfaces.${s.oceanWhy && s.oceanWhy.length ? `<br><small>Why: ${s.oceanWhy.map(esc).join("; ")}.</small>` : ""}</p><button id="showAnyway" class="show-anyway" type="button">Show anyways</button>`
-          : `<p class="alt">${esc(PLANETS[other].label)} match: ${s.scores[other]}% &middot; ${s.lat.toFixed(2)}&deg;, ${s.lon.toFixed(2)}&deg;</p>`}</div>
+          : `<p class="alt">${esc(PLANETS[other].label)} match: ${s.scores[other]}% &middot; ${s.lat.toFixed(2)}&deg;, ${s.lon.toFixed(2)}&deg;</p>${s.id === "custom" && s.unverified ? '<p class="alt tight">Land or water could not be fully checked here (some services did not answer), so treat a land result with care.</p>' : ""}`}</div>
     </div>
     ${s.ocean && s.bypass ? `<p class="warn-box" style="margin:0 0 12px">Water location shown by your choice. These percentages are computed from sea-level weather and sea-floor depth, so they show how this spot would score on the formula, not a real land analog. Expect low values: water means no dryness, and sea-level pressure is far from Mars.</p>` : ""}
     <div class="sub"><span>Current conditions at site</span><span class="live ${w.live ? "on" : "off"}">${w.live ? "live" : "estimated"}</span></div>
